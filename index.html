@@ -1,0 +1,1336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TAPE — Market Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0C111C;
+    --panel:#141B29;
+    --panel-2:#182131;
+    --hairline:#293244;
+    --paper:#EDE7D8;
+    --paper-dim:#B9B1A0;
+    --muted:#8891A5;
+    --gold:#C9A24B;
+    --gold-bright:#E4C374;
+    --up:#4FAE85;
+    --down:#C1554A;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--ink);
+    color:var(--paper);
+    font-family:'Inter',sans-serif;
+    height:100vh;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:var(--gold);color:#0C111C;}
+
+  a{color:inherit;}
+
+  /* ---------- HEADER ---------- */
+  header.topbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:18px 28px 14px;
+    border-bottom:1px solid var(--hairline);
+    flex-shrink:0;
+  }
+  .brand{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+  }
+  .brand .mark{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:26px;
+    letter-spacing:0.5px;
+    color:var(--paper);
+  }
+  .brand .mark em{ color:var(--gold-bright); font-style:normal; }
+  .brand .tagline{
+    font-size:11.5px;
+    color:var(--muted);
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    border-left:1px solid var(--hairline);
+    padding-left:10px;
+    display:none;
+  }
+  @media(min-width:640px){ .brand .tagline{ display:inline; } }
+
+  .top-actions{ display:flex; align-items:center; gap:10px; }
+  .status-chip{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:0.08em;
+    padding:5px 10px;
+    border-radius:20px;
+    border:1px solid var(--hairline);
+    color:var(--muted);
+    display:flex;
+    align-items:center;
+    gap:6px;
+    text-transform:uppercase;
+  }
+  .status-dot{ width:6px;height:6px;border-radius:50%; background:var(--down); }
+  .status-chip.live .status-dot{ background:var(--up); box-shadow:0 0 6px var(--up); }
+  .status-chip.live{ color:var(--up); border-color:rgba(79,174,133,0.35); }
+
+  button.iconbtn{
+    background:var(--panel);
+    border:1px solid var(--hairline);
+    color:var(--paper);
+    width:34px;height:34px;
+    border-radius:8px;
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:border-color .15s ease, color .15s ease;
+  }
+  button.iconbtn:hover{ border-color:var(--gold); color:var(--gold-bright); }
+
+  /* ---------- TICKER TAPE ---------- */
+  .tape-wrap{
+    position:relative;
+    background:linear-gradient(180deg, #1B1408 0%, #17110A 100%);
+    border-top:1px solid #3A2E14;
+    border-bottom:1px solid #3A2E14;
+    overflow:hidden;
+    padding:0;
+    flex-shrink:0;
+  }
+  .tape-wrap::before, .tape-wrap::after{
+    content:"";
+    position:absolute; top:0; bottom:0; width:36px; z-index:2;
+    pointer-events:none;
+  }
+  .tape-wrap::before{ left:0; background:linear-gradient(90deg, #17110A 10%, transparent); }
+  .tape-wrap::after{ right:0; background:linear-gradient(270deg, #17110A 10%, transparent); }
+  .tape-track{
+    display:flex;
+    width:max-content;
+    animation:scroll-tape 55s linear infinite;
+  }
+  .tape-wrap:hover .tape-track{ animation-play-state:paused; }
+  @keyframes scroll-tape{
+    from{ transform:translateX(0); }
+    to{ transform:translateX(-50%); }
+  }
+  .tape-item{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    padding:9px 22px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px;
+    white-space:nowrap;
+    border-right:1px dashed #3A2E14;
+    color:var(--gold-bright);
+  }
+  .tape-item .sym{ font-weight:600; letter-spacing:0.02em; }
+  .tape-item .px{ color:#E8DFC8; }
+  .tape-item .chg.up{ color:var(--up); }
+  .tape-item .chg.down{ color:var(--down); }
+  .tape-item .arrow{ font-size:10px; }
+
+  .tape-wrap-secondary{
+    background:linear-gradient(180deg, #14100A 0%, #110D08 100%);
+    padding-left:132px;
+  }
+  .tape-wrap-secondary .tape-track{ animation-duration:70s; }
+  .tape-fixed-label{
+    position:absolute; left:0; top:0; bottom:0; width:132px; z-index:3;
+    display:flex; align-items:center;
+    padding-left:14px;
+    background:linear-gradient(90deg, #17110A 0%, #17110A 78%, transparent);
+    font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:0.06em;
+    color:var(--gold-bright);
+    pointer-events:none;
+    white-space:nowrap;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .tape-track{ animation:none; overflow-x:auto; }
+  }
+
+  /* ---------- LAYOUT ---------- */
+  main{
+    width:100%;
+    padding:20px 28px;
+    display:grid;
+    grid-template-columns:1.15fr 1fr;
+    grid-template-rows:minmax(240px, 34vh) 1fr minmax(190px, 240px);
+    gap:18px;
+    flex:1 1 auto;
+    min-height:0;
+    overflow:hidden;
+  }
+  #tapeSourceNote, #tapeSourceNote2{ flex-shrink:0; }
+  footer{ flex-shrink:0; }
+  .watchlist-bottom{ grid-column: 1 / -1; }
+
+  .col{ display:flex; flex-direction:column; gap:18px; min-height:0; overflow:hidden; }
+
+  /* panels that size to their content (short lists, cards) */
+  .panel-fixed{ flex:0 0 auto; }
+  /* panels that stretch to fill remaining column height, scrolling internally */
+  .panel-grow{ flex:1 1 0; min-height:0; display:flex; flex-direction:column; }
+  .panel-grow .panel-body{ flex:1 1 auto; min-height:0; overflow-y:auto; }
+  .panel-grow-lg{ flex:2 1 0; min-height:0; display:flex; flex-direction:column; }
+  .panel-grow-lg .panel-body{ flex:1 1 auto; min-height:0; overflow-y:auto; }
+
+  @media(max-width:960px){
+    body{ height:auto; min-height:100vh; overflow:visible; }
+    main{
+      display:block;
+      grid-template-columns:none;
+      padding:18px 16px 48px;
+      overflow:visible;
+      min-height:0;
+    }
+    .col{ display:block; overflow:visible; }
+    .col > *{ margin-bottom:18px; }
+    .panel-grow, .panel-grow-lg{ display:block; }
+    .panel-grow .panel-body, .panel-grow-lg .panel-body{ overflow:visible; max-height:none; }
+    .heatmap-frame-wrap{ height:380px; }
+  }
+
+  .heatmap-panel{
+    grid-column: 1 / -1;
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+  }
+  .heatmap-controls{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    flex-shrink:0;
+  }
+  .heatmap-controls button{
+    background:var(--panel-2);
+    border:1px solid var(--hairline);
+    color:var(--paper-dim);
+    font-size:11.5px;
+    padding:5px 11px;
+    border-radius:20px;
+    cursor:pointer;
+    font-family:'Inter',sans-serif;
+  }
+  .heatmap-controls button.active{
+    background:var(--gold);
+    color:#241C08;
+    border-color:var(--gold);
+    font-weight:600;
+  }
+  .heatmap-frame-wrap{
+    margin-top:14px;
+    border-radius:8px;
+    overflow:hidden;
+    border:1px solid var(--hairline);
+    background:var(--panel-2);
+    flex:1 1 auto;
+    min-height:220px;
+  }
+  .heatmap-frame-wrap iframe{
+    width:100%; height:100%; border:none; display:block;
+  }
+  .heatmap-fallback{
+    font-size:11.5px; color:var(--muted); margin-top:10px; line-height:1.5;
+    flex-shrink:0;
+  }
+  .heatmap-fallback a{ color:var(--gold-bright); text-decoration:underline; }
+
+  section.panel{
+    background:var(--panel);
+    border:1px solid var(--hairline);
+    border-radius:var(--radius);
+    padding:18px 18px 16px;
+  }
+  .panel-head{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    margin-bottom:14px;
+    flex-shrink:0;
+  }
+  .panel-head h2{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:17px;
+    margin:0;
+    letter-spacing:0.2px;
+  }
+  .panel-head .sub{
+    font-size:11px;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:0.07em;
+  }
+
+  /* ---------- INDICES ---------- */
+  .idx-grid{
+    display:grid;
+    grid-template-columns:repeat(2,1fr);
+    gap:10px;
+  }
+  @media(min-width:1100px){ .idx-grid{ grid-template-columns:repeat(4,1fr); } }
+  .idx-card{
+    background:var(--panel-2);
+    border:1px solid var(--hairline);
+    border-radius:8px;
+    padding:12px 13px;
+  }
+  .idx-card .label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; }
+  .idx-card .proxy{ font-size:9.5px; color:#5b6479; margin-left:5px; }
+  .idx-card .price{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:19px;
+    margin-top:4px;
+    color:var(--paper);
+  }
+  .idx-card .chg{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; margin-top:2px; }
+  .idx-card .chg.up{ color:var(--up); }
+  .idx-card .chg.down{ color:var(--down); }
+
+  /* ---------- WATCHLIST ---------- */
+  .add-row{
+    display:flex;
+    gap:8px;
+    margin-bottom:12px;
+    flex-shrink:0;
+  }
+  .add-row input{
+    flex:1;
+    background:var(--panel-2);
+    border:1px solid var(--hairline);
+    color:var(--paper);
+    padding:8px 10px;
+    border-radius:7px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px;
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+  }
+  .add-row input:focus{ outline:none; border-color:var(--gold); }
+  .add-row button{
+    background:var(--gold);
+    color:#241C08;
+    border:none;
+    font-weight:600;
+    font-size:13px;
+    padding:0 16px;
+    border-radius:7px;
+    cursor:pointer;
+  }
+  .add-row button:hover{ background:var(--gold-bright); }
+
+  table.watchlist{ width:100%; border-collapse:collapse; }
+  table.watchlist th{
+    text-align:left;
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:var(--muted);
+    font-weight:500;
+    padding:6px 8px;
+    border-bottom:1px solid var(--hairline);
+  }
+  table.watchlist td{
+    padding:9px 8px;
+    border-bottom:1px solid var(--hairline);
+    font-size:13.5px;
+    vertical-align:middle;
+  }
+  table.watchlist tr:last-child td{ border-bottom:none; }
+  table.watchlist .sym{ font-family:'IBM Plex Mono',monospace; font-weight:600; }
+  table.watchlist .price{ font-family:'IBM Plex Mono',monospace; }
+  table.watchlist .chg{ font-family:'IBM Plex Mono',monospace; }
+  table.watchlist .chg.up{ color:var(--up); }
+  table.watchlist .chg.down{ color:var(--down); }
+  table.watchlist .rm{
+    background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;line-height:1;
+    padding:2px 6px;
+  }
+  table.watchlist .rm:hover{ color:var(--down); }
+  table.watchlist .spark{ width:70px; }
+
+  /* ---------- SECTORS ---------- */
+  .sector-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:6px 0;
+  }
+  .sector-row .name{ width:118px; font-size:12.5px; color:var(--paper-dim); flex-shrink:0; }
+  .sector-bar-track{
+    flex:1;
+    height:8px;
+    background:var(--panel-2);
+    border-radius:4px;
+    overflow:hidden;
+    position:relative;
+  }
+  .sector-bar-fill{
+    position:absolute; top:0; bottom:0;
+    border-radius:4px;
+  }
+  .sector-bar-fill.up{ background:var(--up); left:50%; }
+  .sector-bar-fill.down{ background:var(--down); right:50%; }
+  .sector-row .val{
+    width:52px; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:12px;
+  }
+  .sector-row .val.up{ color:var(--up); }
+  .sector-row .val.down{ color:var(--down); }
+
+  /* ---------- NEWS ---------- */
+  ul.news-list{ list-style:none; margin:0; padding:0; }
+  ul.news-list li{
+    padding:11px 0;
+    border-bottom:1px solid var(--hairline);
+  }
+  ul.news-list li:last-child{ border-bottom:none; }
+  ul.news-list .headline{ font-size:13.5px; line-height:1.4; color:var(--paper); }
+  ul.news-list .meta{ margin-top:4px; font-size:11px; color:var(--muted); font-family:'IBM Plex Mono',monospace; }
+
+  /* ---------- OPTIONS FLOW ---------- */
+  ul.flow-list{ list-style:none; margin:0; padding:0; }
+  ul.flow-list li{
+    display:flex; align-items:center; gap:10px;
+    padding:9px 0; border-bottom:1px solid var(--hairline);
+  }
+  ul.flow-list li:last-child{ border-bottom:none; }
+  .flow-side{
+    width:4px; align-self:stretch; border-radius:2px; flex-shrink:0;
+  }
+  .flow-side.call{ background:var(--up); }
+  .flow-side.put{ background:var(--down); }
+  .flow-main{ flex:1; min-width:0; }
+  .flow-line1{ display:flex; align-items:baseline; gap:7px; font-family:'IBM Plex Mono',monospace; font-size:13px; }
+  .flow-line1 .sym{ font-weight:600; }
+  .flow-line1 .contract{ color:var(--paper-dim); font-size:12px; }
+  .flow-badge{
+    font-size:9.5px; text-transform:uppercase; letter-spacing:0.05em;
+    padding:1px 6px; border-radius:9px; border:1px solid var(--hairline); color:var(--muted);
+  }
+  .flow-badge.sweep{ color:var(--gold-bright); border-color:rgba(201,162,75,0.4); }
+  .flow-line2{ margin-top:3px; font-size:11px; color:var(--muted); font-family:'IBM Plex Mono',monospace; }
+  .flow-line2 .prem{ color:var(--paper); }
+
+  /* ---------- SETTINGS DRAWER ---------- */
+  .drawer-backdrop{
+    position:fixed; inset:0; background:rgba(0,0,0,0.55);
+    display:none; z-index:10;
+  }
+  .drawer-backdrop.open{ display:block; }
+  .drawer{
+    position:fixed; top:0; right:0; bottom:0; width:340px; max-width:88vw;
+    background:var(--panel); border-left:1px solid var(--hairline);
+    transform:translateX(100%); transition:transform .22s ease;
+    z-index:11; padding:22px 20px; overflow-y:auto;
+  }
+  .drawer.open{ transform:translateX(0); }
+  .drawer h3{ font-family:'Fraunces',serif; font-size:18px; margin:0 0 4px; }
+  .drawer p.hint{ font-size:12px; color:var(--muted); line-height:1.5; margin:0 0 16px; }
+  .drawer label{ display:block; font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted); margin-bottom:6px; }
+  .drawer input[type=text]{
+    width:100%; background:var(--panel-2); border:1px solid var(--hairline); color:var(--paper);
+    padding:9px 10px; border-radius:7px; font-family:'IBM Plex Mono',monospace; font-size:12.5px; margin-bottom:14px;
+  }
+  .drawer button.primary{
+    width:100%; background:var(--gold); color:#241C08; border:none; font-weight:600;
+    padding:10px; border-radius:7px; cursor:pointer; font-size:13px; margin-bottom:8px;
+  }
+  .drawer button.secondary{
+    width:100%; background:transparent; color:var(--muted); border:1px solid var(--hairline);
+    padding:9px; border-radius:7px; cursor:pointer; font-size:12.5px;
+  }
+  .drawer .keylink{ font-size:11.5px; color:var(--gold-bright); text-decoration:underline; }
+  .drawer-close{
+    position:absolute; top:18px; right:18px; background:none; border:none; color:var(--muted);
+    font-size:18px; cursor:pointer;
+  }
+
+  footer{
+    text-align:center;
+    padding:20px;
+    font-size:11px;
+    color:#4d5568;
+    font-family:'IBM Plex Mono',monospace;
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark">TAPE<em>.</em></span>
+    <span class="tagline">A market monitor, styled after the exchange tape</span>
+  </div>
+  <div class="top-actions">
+    <span class="status-chip" id="statusChip"><span class="status-dot"></span><span id="statusText">Demo data</span></span>
+    <button class="iconbtn" id="openSettings" title="Settings">⚙</button>
+  </div>
+</header>
+
+<div class="tape-wrap">
+  <div class="tape-track" id="tapeTrack"></div>
+</div>
+<div id="tapeSourceNote" style="display:none; width:100%; margin:8px 0 0; padding:0 28px; font-size:11px; color:var(--muted); font-family:'IBM Plex Mono',monospace;"></div>
+
+<div class="tape-wrap tape-wrap-secondary">
+  <span class="tape-fixed-label">Trending · StockTwits</span>
+  <div class="tape-track" id="tapeTrack2"></div>
+</div>
+<div id="tapeSourceNote2" style="width:100%; margin:6px 0 0; padding:0 28px; font-size:11px; color:var(--muted); font-family:'IBM Plex Mono',monospace;"></div>
+
+<main>
+  <section class="panel heatmap-panel">
+    <div class="panel-head">
+      <h2>S&amp;P 500 heat map</h2>
+      <span class="sub">Widget by TradingView</span>
+    </div>
+    <div class="heatmap-controls">
+      <button class="active" id="hmGroupSector" data-grouping="sector">By sector</button>
+      <button id="hmGroupNone" data-grouping="no_group">Flat</button>
+      <button class="active" id="hmColorChange" data-color="change">Daily % change</button>
+      <button id="hmColorYtd" data-color="Perf.YTD">YTD % change</button>
+    </div>
+    <div class="heatmap-frame-wrap">
+      <iframe id="hmFrame" title="S&P 500 stock heatmap" loading="lazy"></iframe>
+    </div>
+    <p class="heatmap-fallback">Live, official TradingView widget — no key needed. Tile size is market cap, color is performance. If it doesn't render here, view it directly at <a href="https://www.tradingview.com/heatmap/stock/?utm_source=tape" target="_blank" rel="noopener">tradingview.com/heatmap/stock</a>.</p>
+  </section>
+
+  <div class="col">
+    <section class="panel panel-fixed">
+      <div class="panel-head">
+        <h2>Indices</h2>
+        <span class="sub" id="indicesSub">ETF proxies</span>
+      </div>
+      <div class="idx-grid" id="idxGrid"></div>
+    </section>
+
+    <section class="panel panel-grow">
+      <div class="panel-head">
+        <h2>Headlines</h2>
+        <span class="sub" id="newsSub">Sample</span>
+      </div>
+      <div class="panel-body">
+        <ul class="news-list" id="newsList"></ul>
+      </div>
+    </section>
+
+    <section class="panel panel-grow">
+      <div class="panel-head">
+        <h2>Sector snapshot</h2>
+        <span class="sub">Illustrative, not live</span>
+      </div>
+      <div class="panel-body">
+        <div id="sectorList"></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="col">
+    <section class="panel panel-grow">
+      <div class="panel-head">
+        <h2>Options flow</h2>
+        <span class="sub" id="flowSub">Simulated</span>
+      </div>
+      <div class="panel-body">
+        <ul class="flow-list" id="flowList"></ul>
+      </div>
+      <p class="hint" id="flowFooterNote" style="font-size:10.5px; color:var(--muted); margin:10px 0 0; line-height:1.5; flex-shrink:0;"></p>
+    </section>
+  </div>
+
+  <section class="panel panel-grow watchlist-bottom">
+    <div class="panel-head">
+      <h2>Watchlist</h2>
+      <span class="sub">Yours to edit</span>
+    </div>
+    <div class="add-row">
+      <input type="text" id="addSymbolInput" placeholder="ADD TICKER, e.g. NVDA" maxlength="6">
+      <button id="addSymbolBtn">Add</button>
+    </div>
+    <div class="panel-body">
+      <table class="watchlist">
+        <thead>
+          <tr><th>Symbol</th><th>Last</th><th>Chg %</th><th>30-tick</th><th></th></tr>
+        </thead>
+        <tbody id="watchlistBody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Prices update every few seconds · Demo mode simulates movement locally · Finnhub key for live quotes · Unusual Whales key (paid) for live options flow
+</footer>
+
+<div class="drawer-backdrop" id="drawerBackdrop">
+  <div class="drawer" id="drawer">
+    <button class="drawer-close" id="closeDrawer">✕</button>
+    <h3>Settings</h3>
+
+    <label>Ticker tape source</label>
+    <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:6px;">
+      <label style="display:flex; align-items:center; gap:8px; text-transform:none; font-size:13px; color:var(--paper); cursor:pointer;">
+        <input type="radio" name="tapeSource" id="tapeSourceWatchlist" value="watchlist" checked style="width:auto;">
+        Your watchlist &amp; indices
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; text-transform:none; font-size:13px; color:var(--paper); cursor:pointer;">
+        <input type="radio" name="tapeSource" id="tapeSourceMovers" value="movers" style="width:auto;">
+        Biggest movers (via Finnhub)
+      </label>
+    </div>
+    <p class="hint" id="tapeSourceHint">Finnhub's free tier doesn't expose a market-wide "trending" discovery list — that's a premium screener feature. This ranks the symbols you already track (watchlist + indices) by how far they've moved, live once you add a key below.</p>
+
+    <p class="hint" style="border-top:1px solid var(--hairline); padding-top:14px;">TAPE runs on simulated data by default so it always works. Paste a free API key from
+      <a class="keylink" href="https://finnhub.io/register" target="_blank" rel="noopener">finnhub.io</a>
+      to pull real quotes and headlines instead. The key is stored only for you, in this artifact's storage — never shared.</p>
+    <label for="apiKeyInput">Finnhub API key</label>
+    <input type="text" id="apiKeyInput" placeholder="paste key here">
+    <button class="primary" id="saveKeyBtn">Save &amp; go live</button>
+    <button class="secondary" id="clearKeyBtn">Clear key &amp; use demo data</button>
+    <p class="hint" id="drawerStatus"></p>
+
+    <p class="hint" style="border-top:1px solid var(--hairline); padding-top:14px;">The options-flow panel is simulated by default too. Real flow alerts (sweeps, blocks, repeated hits) come from
+      <a class="keylink" href="https://unusualwhales.com/pricing?product=api" target="_blank" rel="noopener">Unusual Whales' API</a>,
+      which is a paid product — there's no free tier for this data, since it's built on the live options tape. Only add a key if you already have one.</p>
+    <label for="uwKeyInput">Unusual Whales API key</label>
+    <input type="text" id="uwKeyInput" placeholder="paste key here">
+    <button class="primary" id="saveUwKeyBtn">Save &amp; go live</button>
+    <button class="secondary" id="clearUwKeyBtn">Clear key &amp; use demo data</button>
+    <p class="hint" id="uwDrawerStatus"></p>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------------- state ----------------
+  var DEFAULT_WATCHLIST = ["AAPL","MSFT","NVDA","AMZN","GOOGL","TSLA","META","JPM"];
+  var INDEX_PROXIES = [
+    {sym:"SPY", label:"S&P 500"},
+    {sym:"QQQ", label:"Nasdaq 100"},
+    {sym:"DIA", label:"Dow Jones"},
+    {sym:"IWM", label:"Russell 2000"}
+  ];
+  var SECTORS = ["Technology","Financials","Health Care","Energy","Industrials","Consumer Disc.","Utilities","Real Estate"];
+
+  var SAMPLE_HEADLINES = [
+    "Regional banks report steadier deposit trends heading into earnings season",
+    "Chipmakers extend gains as data-center capex guidance tops estimates",
+    "Treasury yields drift lower ahead of the next rate decision",
+    "Retailers flag mixed back-to-school demand across price tiers",
+    "Energy majors trim capex plans citing softer crude price outlook",
+    "Housing starts tick up as builders react to rate relief",
+    "Airlines see fuel costs ease, lifting margin expectations",
+    "Small-cap names lag as investors stay concentrated in mega-caps"
+  ];
+  var FLOW_RULES = ["RepeatedHits", "RepeatedHitsAscendingFill", "RepeatedHitsDescendingFill", "Sweep"];
+  var TRENDING_FALLBACK_POOL = ["TSLA","NVDA","AAPL","AMD","PLTR","COIN","GME","AMC","SOFI","RIVN","MARA","MSTR","SMCI","META","AMZN","GOOGL","NFLX","INTC","F","BA"];
+
+  var state = {
+    apiKey: null,
+    live: false,
+    watchlist: DEFAULT_WATCHLIST.slice(),
+    prices: {},   // symbol -> {price, prevClose, changePct, history:[]}
+    sectors: {},  // name -> changePct
+    news: [],
+    tapeSource: 'watchlist',   // 'watchlist' | 'movers'
+    uwApiKey: null,
+    uwLive: false,
+    optionsFlow: [],   // {ticker, type, strike, expiry, premium, size, sweep, createdAt}
+    trendingSymbols: [],     // StockTwits trending list, when reachable
+    trendingStatus: 'idle'   // 'idle' | 'ok' | 'blocked'
+  };
+
+  // ---------------- storage helpers (personal, non-shared) ----------------
+  function loadStorage(){
+    var tasks = [];
+    if (window.storage) {
+      tasks.push(
+        window.storage.get('tape:watchlist').then(function(r){
+          if (r && r.value) {
+            try { var arr = JSON.parse(r.value); if (Array.isArray(arr) && arr.length) state.watchlist = arr; } catch(e){}
+          }
+        }).catch(function(){})
+      );
+      tasks.push(
+        window.storage.get('tape:apikey').then(function(r){
+          if (r && r.value) { state.apiKey = r.value; }
+        }).catch(function(){})
+      );
+      tasks.push(
+        window.storage.get('tape:source').then(function(r){
+          if (r && (r.value === 'movers' || r.value === 'watchlist')) { state.tapeSource = r.value; }
+        }).catch(function(){})
+      );
+      tasks.push(
+        window.storage.get('tape:uwkey').then(function(r){
+          if (r && r.value) { state.uwApiKey = r.value; }
+        }).catch(function(){})
+      );
+    }
+    return Promise.all(tasks);
+  }
+  function saveWatchlist(){
+    if (window.storage) {
+      window.storage.set('tape:watchlist', JSON.stringify(state.watchlist), false).catch(function(){});
+    }
+  }
+  function saveApiKey(key){
+    if (window.storage) {
+      window.storage.set('tape:apikey', key, false).catch(function(){});
+    }
+  }
+  function clearApiKey(){
+    if (window.storage) {
+      window.storage.delete('tape:apikey', false).catch(function(){});
+    }
+  }
+  function saveUwApiKey(key){
+    if (window.storage) {
+      window.storage.set('tape:uwkey', key, false).catch(function(){});
+    }
+  }
+  function clearUwApiKey(){
+    if (window.storage) {
+      window.storage.delete('tape:uwkey', false).catch(function(){});
+    }
+  }
+
+  // ---------------- price simulation ----------------
+  function seedPrice(sym){
+    // deterministic-ish base price from symbol so it looks stable across reloads
+    var hash = 0;
+    for (var i=0;i<sym.length;i++){ hash = (hash*31 + sym.charCodeAt(i)) % 9973; }
+    var base = 20 + (hash % 480);
+    return base;
+  }
+  function ensurePriceEntry(sym){
+    if (!state.prices[sym]){
+      var base = seedPrice(sym);
+      state.prices[sym] = { price: base, prevClose: base, changePct: 0, history: [base] };
+    }
+  }
+  function simulateTick(sym){
+    ensurePriceEntry(sym);
+    var e = state.prices[sym];
+    var drift = (Math.random() - 0.5) * (e.price * 0.006);
+    e.price = Math.max(1, e.price + drift);
+    e.changePct = ((e.price - e.prevClose) / e.prevClose) * 100;
+    e.history.push(e.price);
+    if (e.history.length > 30) e.history.shift();
+  }
+  function simulateSectors(){
+    SECTORS.forEach(function(s){
+      var prev = state.sectors[s] || (Math.random()*4 - 2);
+      var next = prev + (Math.random() - 0.5) * 0.6;
+      next = Math.max(-4.5, Math.min(4.5, next));
+      state.sectors[s] = next;
+    });
+  }
+
+  // ---------------- live fetch (Finnhub) ----------------
+  function fetchQuoteLive(sym){
+    var url = "https://finnhub.io/api/v2/quote?symbol=" + encodeURIComponent(sym) + "&token=" + encodeURIComponent(state.apiKey);
+    return fetch(url).then(function(r){
+      if (!r.ok) throw new Error("bad response");
+      return r.json();
+    }).then(function(d){
+      if (typeof d.c !== "number" || d.c === 0) throw new Error("no data");
+      ensurePriceEntry(sym);
+      var e = state.prices[sym];
+      e.price = d.c;
+      e.prevClose = d.pc || e.prevClose;
+      e.changePct = d.dp != null ? d.dp : ((e.price - e.prevClose)/e.prevClose*100);
+      e.history.push(e.price);
+      if (e.history.length > 30) e.history.shift();
+    });
+  }
+  function fetchNewsLive(){
+    var url = "https://finnhub.io/api/v2/news?category=general&token=" + encodeURIComponent(state.apiKey);
+    return fetch(url).then(function(r){
+      if (!r.ok) throw new Error("bad response");
+      return r.json();
+    }).then(function(list){
+      if (!Array.isArray(list)) throw new Error("no data");
+      state.news = list.slice(0, 8).map(function(n){
+        return { headline: n.headline, source: n.source, time: n.datetime ? new Date(n.datetime*1000) : null };
+      });
+    });
+  }
+
+  // Finnhub's free tier has no market-wide "trending" or "most active" discovery
+  // endpoint — that's a premium screener feature, not something a plain quote
+  // API exposes. So this isn't a discovery feed of new tickers; it's a live
+  // ranking of the symbols you already track (watchlist + indices), sorted by
+  // how far each has moved. Honest proxy, not the real thing.
+  function computeMoversList(){
+    var pool = state.watchlist.concat(INDEX_PROXIES.map(function(i){return i.sym;}));
+    pool = pool.filter(function(s, i){ return pool.indexOf(s) === i; }); // dedupe
+    var withChg = pool.map(function(sym){
+      var e = state.prices[sym];
+      return e ? {sym:sym, abs: Math.abs(e.changePct)} : null;
+    }).filter(Boolean);
+    withChg.sort(function(a,b){ return b.abs - a.abs; });
+    return withChg.map(function(x){ return x.sym; });
+  }
+
+  // ---------------- StockTwits trending (second tape) ----------------
+  // StockTwits' trending-symbols endpoint is built for their own web/app client,
+  // not for third-party cross-origin use — most browsers will block this call
+  // with a CORS error, and there's no supported client-side way around that
+  // (it's a deliberate browser security boundary). We try it honestly; if it's
+  // blocked, the second tape falls back to a fixed pool of commonly-discussed
+  // tickers, clearly labeled as simulated rather than pretending it's live.
+  function fetchStockTwitsTrending(){
+    var url = "https://api.stocktwits.com/api/2/trending/symbols.json";
+    return fetch(url).then(function(r){
+      if (!r.ok) throw new Error("bad response");
+      return r.json();
+    }).then(function(d){
+      if (!d || !Array.isArray(d.symbols)) throw new Error("no data");
+      state.trendingSymbols = d.symbols.slice(0, 15).map(function(s){ return s.symbol; });
+      state.trendingStatus = 'ok';
+    }).catch(function(){
+      var shuffled = TRENDING_FALLBACK_POOL.slice().sort(function(){ return Math.random()-0.5; });
+      state.trendingSymbols = shuffled.slice(0, 12);
+      state.trendingStatus = 'blocked';
+    });
+  }
+
+  function refreshTrending(){
+    return fetchStockTwitsTrending().then(function(){
+      var allSymbols = state.trendingSymbols.slice();
+      if (state.live && state.apiKey){
+        return Promise.all(allSymbols.map(function(sym){
+          return fetchQuoteLive(sym).catch(function(){ simulateTick(sym); });
+        })).then(function(){ renderTape2(); });
+      } else {
+        allSymbols.forEach(simulateTick);
+        renderTape2();
+        return Promise.resolve();
+      }
+    });
+  }
+
+  function refreshAll(){
+    var allSymbols = state.watchlist
+      .concat(INDEX_PROXIES.map(function(i){return i.sym;}))
+      .concat(state.trendingSymbols);
+    allSymbols = allSymbols.filter(function(s, i){ return allSymbols.indexOf(s) === i; }); // dedupe
+
+    if (state.live && state.apiKey){
+      var promises = allSymbols.map(function(sym){
+        return fetchQuoteLive(sym).catch(function(){ simulateTick(sym); });
+      });
+      promises.push(fetchNewsLive().catch(function(){ /* keep old/sample news */ }));
+      Promise.all(promises).then(render);
+    } else {
+      allSymbols.forEach(simulateTick);
+      if (!state.news.length) buildSampleNews();
+      simulateSectors();
+      render();
+    }
+    if (state.live) simulateSectors(); // sectors always illustrative
+  }
+
+  function buildSampleNews(){
+    var shuffled = SAMPLE_HEADLINES.slice().sort(function(){ return Math.random()-0.5; });
+    state.news = shuffled.slice(0,6).map(function(h){
+      return { headline: h, source: "Sample wire", time: null };
+    });
+  }
+
+  // ---------------- options flow (Unusual Whales) ----------------
+  function fetchOptionsFlowLive(){
+    var url = "https://api.unusualwhales.com/api/option-trades/flow-alerts?limit=50";
+    return fetch(url, {
+      headers: { "Authorization": "Bearer " + state.uwApiKey, "Accept": "application/json" }
+    }).then(function(r){
+      if (!r.ok) throw new Error("bad response");
+      return r.json();
+    }).then(function(d){
+      if (!d || !Array.isArray(d.data)) throw new Error("no data");
+      state.optionsFlow = d.data.map(function(a){
+        return {
+          ticker: a.ticker,
+          type: a.type,
+          strike: a.strike,
+          expiry: a.expiry,
+          premium: Number(a.total_premium),
+          size: a.total_size,
+          sweep: !!a.has_sweep,
+          rule: a.alert_rule,
+          createdAt: a.created_at ? new Date(a.created_at) : new Date()
+        };
+      });
+    });
+  }
+
+  function simulateOptionsFlow(){
+    var pool = state.watchlist.length ? state.watchlist : DEFAULT_WATCHLIST;
+    var entries = [];
+    var n = 25 + Math.floor(Math.random()*15);
+    for (var i=0;i<n;i++){
+      var sym = pool[Math.floor(Math.random()*pool.length)];
+      var e = state.prices[sym];
+      var spot = e ? e.price : seedPrice(sym);
+      var isCall = Math.random() > 0.45;
+      var strikeOffset = (Math.random()*0.12 - 0.02) * spot * (isCall ? 1 : -1);
+      var strike = Math.max(1, Math.round(spot + strikeOffset));
+      var premium = Math.round((5000 + Math.random()*480000));
+      var size = Math.round(20 + Math.random()*900);
+      var daysOut = [3,7,14,21,30,45][Math.floor(Math.random()*6)];
+      var expiryDate = new Date(Date.now() + daysOut*86400000);
+      entries.push({
+        ticker: sym,
+        type: isCall ? "call" : "put",
+        strike: strike,
+        expiry: expiryDate.toISOString().slice(0,10),
+        premium: premium,
+        size: size,
+        sweep: Math.random() > 0.5,
+        rule: FLOW_RULES[Math.floor(Math.random()*FLOW_RULES.length)],
+        createdAt: new Date(Date.now() - Math.floor(Math.random()*4)*60000)
+      });
+    }
+    entries.sort(function(a,b){ return b.createdAt - a.createdAt; });
+    state.optionsFlow = entries;
+  }
+
+  function refreshOptionsFlow(){
+    if (state.uwLive && state.uwApiKey){
+      return fetchOptionsFlowLive().catch(function(){ simulateOptionsFlow(); }).then(function(){ renderOptionsFlow(); });
+    } else {
+      simulateOptionsFlow();
+      renderOptionsFlow();
+      return Promise.resolve();
+    }
+  }
+
+  // ---------------- rendering ----------------
+  function fmtPrice(p){ return "$" + p.toFixed(2); }
+  function fmtChg(c){ return (c >= 0 ? "+" : "") + c.toFixed(2) + "%"; }
+  function chgClass(c){ return c >= 0 ? "up" : "down"; }
+  function arrow(c){ return c >= 0 ? "▲" : "▼"; }
+
+  function sparkSVG(history){
+    if (!history || history.length < 2) return "";
+    var w = 68, h = 22, pad = 2;
+    var min = Math.min.apply(null, history), max = Math.max.apply(null, history);
+    var range = (max - min) || 1;
+    var step = (w - pad*2) / (history.length - 1);
+    var pts = history.map(function(v, i){
+      var x = pad + i*step;
+      var y = h - pad - ((v - min)/range) * (h - pad*2);
+      return x.toFixed(1) + "," + y.toFixed(1);
+    }).join(" ");
+    var lastUp = history[history.length-1] >= history[0];
+    var color = lastUp ? "var(--up)" : "var(--down)";
+    return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'"><polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg>';
+  }
+
+  function renderTape(){
+    var useMovers = state.tapeSource === 'movers';
+    var symbols = useMovers
+      ? computeMoversList()
+      : INDEX_PROXIES.map(function(i){return i.sym;}).concat(state.watchlist);
+    var items = symbols.map(function(sym){
+      var e = state.prices[sym];
+      if (!e) return "";
+      var cls = chgClass(e.changePct);
+      return '<span class="tape-item"><span class="sym">'+sym+'</span><span class="px">'+fmtPrice(e.price)+'</span><span class="chg '+cls+'"><span class="arrow">'+arrow(e.changePct)+'</span> '+fmtChg(e.changePct)+'</span></span>';
+    }).join("");
+    document.getElementById('tapeTrack').innerHTML = items + items; // duplicate for seamless loop
+
+    var noteEl = document.getElementById('tapeSourceNote');
+    if (noteEl){
+      if (useMovers){
+        noteEl.textContent = state.live
+          ? "Ranked live by % change, from your watchlist + indices — not a market-wide trending feed."
+          : "Ranked by simulated % change (demo mode) — add a Finnhub key in Settings to rank live movement.";
+        noteEl.style.display = 'block';
+      } else {
+        noteEl.style.display = 'none';
+      }
+    }
+  }
+
+  function renderTape2(){
+    var symbols = state.trendingSymbols;
+    var items = symbols.map(function(sym){
+      var e = state.prices[sym];
+      if (!e) return "";
+      var cls = chgClass(e.changePct);
+      return '<span class="tape-item"><span class="sym">'+sym+'</span><span class="px">'+fmtPrice(e.price)+'</span><span class="chg '+cls+'"><span class="arrow">'+arrow(e.changePct)+'</span> '+fmtChg(e.changePct)+'</span></span>';
+    }).join("");
+    document.getElementById('tapeTrack2').innerHTML = items + items;
+
+    var noteEl2 = document.getElementById('tapeSourceNote2');
+    if (noteEl2){
+      if (state.trendingStatus === 'blocked'){
+        noteEl2.textContent = "StockTwits' trending endpoint is blocked from the browser here (CORS) — showing a rotating pool of commonly-discussed tickers instead, simulated.";
+      } else if (state.trendingStatus === 'ok'){
+        noteEl2.textContent = "Live from StockTwits' trending-symbols feed.";
+      } else {
+        noteEl2.textContent = "Checking StockTwits…";
+      }
+    }
+  }
+
+  function renderIndices(){
+    var html = INDEX_PROXIES.map(function(idx){
+      var e = state.prices[idx.sym];
+      if (!e) return "";
+      var cls = chgClass(e.changePct);
+      return '<div class="idx-card">'+
+        '<div class="label">'+idx.label+'<span class="proxy">('+idx.sym+')</span></div>'+
+        '<div class="price">'+fmtPrice(e.price)+'</div>'+
+        '<div class="chg '+cls+'">'+arrow(e.changePct)+' '+fmtChg(e.changePct)+'</div>'+
+      '</div>';
+    }).join("");
+    document.getElementById('idxGrid').innerHTML = html;
+    document.getElementById('indicesSub').textContent = state.live ? "Live via Finnhub (ETF proxies)" : "ETF proxies · demo data";
+  }
+
+  function renderWatchlist(){
+    var rows = state.watchlist.map(function(sym){
+      var e = state.prices[sym];
+      if (!e) return "";
+      var cls = chgClass(e.changePct);
+      return '<tr>'+
+        '<td class="sym">'+sym+'</td>'+
+        '<td class="price">'+fmtPrice(e.price)+'</td>'+
+        '<td class="chg '+cls+'">'+arrow(e.changePct)+' '+fmtChg(e.changePct)+'</td>'+
+        '<td class="spark">'+sparkSVG(e.history)+'</td>'+
+        '<td><button class="rm" data-sym="'+sym+'" title="Remove">✕</button></td>'+
+      '</tr>';
+    }).join("");
+    document.getElementById('watchlistBody').innerHTML = rows;
+    Array.prototype.forEach.call(document.querySelectorAll('.rm'), function(btn){
+      btn.addEventListener('click', function(){
+        var sym = btn.getAttribute('data-sym');
+        state.watchlist = state.watchlist.filter(function(s){ return s !== sym; });
+        saveWatchlist();
+        render();
+      });
+    });
+  }
+
+  function renderSectors(){
+    var html = SECTORS.map(function(s){
+      var v = state.sectors[s] || 0;
+      var cls = chgClass(v);
+      var width = Math.min(50, Math.abs(v) / 4.5 * 50);
+      var fill = cls === "up"
+        ? '<div class="sector-bar-fill up" style="width:'+width+'%"></div>'
+        : '<div class="sector-bar-fill down" style="width:'+width+'%"></div>';
+      return '<div class="sector-row">'+
+        '<div class="name">'+s+'</div>'+
+        '<div class="sector-bar-track">'+fill+'</div>'+
+        '<div class="val '+cls+'">'+fmtChg(v)+'</div>'+
+      '</div>';
+    }).join("");
+    document.getElementById('sectorList').innerHTML = html;
+  }
+
+  function renderNews(){
+    var html = state.news.map(function(n){
+      var meta = n.source || "";
+      if (n.time) meta += "  ·  " + n.time.toLocaleString();
+      return '<li><div class="headline">'+escapeHtml(n.headline)+'</div><div class="meta">'+escapeHtml(meta)+'</div></li>';
+    }).join("");
+    document.getElementById('newsList').innerHTML = html;
+    document.getElementById('newsSub').textContent = state.live ? "Live via Finnhub" : "Sample headlines";
+  }
+
+  function escapeHtml(s){
+    var d = document.createElement('div');
+    d.textContent = s || "";
+    return d.innerHTML;
+  }
+
+  function fmtMoney(n){
+    if (n >= 1000000) return "$" + (n/1000000).toFixed(2) + "M";
+    if (n >= 1000) return "$" + (n/1000).toFixed(1) + "K";
+    return "$" + n.toFixed(0);
+  }
+  function timeAgo(d){
+    var secs = Math.max(0, Math.floor((Date.now() - d.getTime())/1000));
+    if (secs < 60) return secs + "s ago";
+    var mins = Math.floor(secs/60);
+    if (mins < 60) return mins + "m ago";
+    var hrs = Math.floor(mins/60);
+    return hrs + "h ago";
+  }
+
+  function renderOptionsFlow(){
+    var html = state.optionsFlow.slice(0, 50).map(function(f){
+      var cls = f.type === "call" ? "call" : "put";
+      var contract = "$" + f.strike + " " + f.type.toUpperCase() + " " + f.expiry;
+      return '<li>'+
+        '<div class="flow-side '+cls+'"></div>'+
+        '<div class="flow-main">'+
+          '<div class="flow-line1"><span class="sym">'+escapeHtml(f.ticker)+'</span><span class="contract">'+escapeHtml(contract)+'</span>'+
+            (f.sweep ? '<span class="flow-badge sweep">Sweep</span>' : '<span class="flow-badge">'+escapeHtml(f.rule || "")+'</span>')+
+          '</div>'+
+          '<div class="flow-line2"><span class="prem">'+fmtMoney(f.premium)+'</span> premium · size '+f.size+' · '+timeAgo(f.createdAt)+'</div>'+
+        '</div>'+
+      '</li>';
+    }).join("");
+    document.getElementById('flowList').innerHTML = html || '<li><div class="flow-main"><div class="flow-line2">No flow to show yet.</div></div></li>';
+    document.getElementById('flowSub').textContent = state.uwLive ? "Live · Unusual Whales" : "Simulated";
+    var footNote = document.getElementById('flowFooterNote');
+    if (footNote){
+      footNote.textContent = state.uwLive
+        ? "Live flow alerts from Unusual Whales' API."
+        : "Simulated — real flow alerts require a paid Unusual Whales API key, added in Settings.";
+    }
+  }
+
+  function renderStatus(){
+    var chip = document.getElementById('statusChip');
+    var text = document.getElementById('statusText');
+    if (state.live) { chip.classList.add('live'); text.textContent = 'Live · Finnhub'; }
+    else { chip.classList.remove('live'); text.textContent = 'Demo data'; }
+  }
+
+  function render(){
+    renderTape();
+    renderTape2();
+    renderIndices();
+    renderWatchlist();
+    renderSectors();
+    renderNews();
+    renderOptionsFlow();
+    renderStatus();
+  }
+
+  // ---------------- UI wiring ----------------
+  function addSymbol(){
+    var input = document.getElementById('addSymbolInput');
+    var sym = input.value.trim().toUpperCase();
+    if (!sym) return;
+    if (!/^[A-Z.\-]{1,6}$/.test(sym)) { input.value=""; return; }
+    if (state.watchlist.indexOf(sym) === -1){
+      state.watchlist.push(sym);
+      saveWatchlist();
+      if (state.live && state.apiKey){
+        fetchQuoteLive(sym).catch(function(){ simulateTick(sym); }).then(render);
+      } else {
+        simulateTick(sym);
+        render();
+      }
+    }
+    input.value = "";
+  }
+  document.getElementById('addSymbolBtn').addEventListener('click', addSymbol);
+  document.getElementById('addSymbolInput').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') addSymbol();
+  });
+
+  var backdrop = document.getElementById('drawerBackdrop');
+  var drawer = document.getElementById('drawer');
+  document.getElementById('openSettings').addEventListener('click', function(){
+    document.getElementById('apiKeyInput').value = state.apiKey || "";
+    document.getElementById('uwKeyInput').value = state.uwApiKey || "";
+    backdrop.classList.add('open'); drawer.classList.add('open');
+  });
+  document.getElementById('closeDrawer').addEventListener('click', closeDrawer);
+  backdrop.addEventListener('click', function(e){ if (e.target === backdrop) closeDrawer(); });
+  function closeDrawer(){ backdrop.classList.remove('open'); drawer.classList.remove('open'); }
+
+  document.getElementById('saveKeyBtn').addEventListener('click', function(){
+    var key = document.getElementById('apiKeyInput').value.trim();
+    var statusEl = document.getElementById('drawerStatus');
+    if (!key){ statusEl.textContent = "Enter a key first, or use Clear to stay on demo data."; return; }
+    statusEl.textContent = "Checking key…";
+    var testUrl = "https://finnhub.io/api/v2/quote?symbol=AAPL&token=" + encodeURIComponent(key);
+    fetch(testUrl).then(function(r){ return r.json(); }).then(function(d){
+      if (typeof d.c === "number" && d.c > 0){
+        state.apiKey = key;
+        state.live = true;
+        saveApiKey(key);
+        statusEl.textContent = "Connected. Live quotes enabled.";
+        refreshAll();
+        setTimeout(closeDrawer, 700);
+      } else {
+        statusEl.textContent = "Key didn't return data — check it and try again. Staying on demo data.";
+      }
+    }).catch(function(){
+      statusEl.textContent = "Couldn't reach Finnhub from here — check the key or your network. Staying on demo data.";
+    });
+  });
+  document.getElementById('clearKeyBtn').addEventListener('click', function(){
+    state.apiKey = null;
+    state.live = false;
+    clearApiKey();
+    document.getElementById('apiKeyInput').value = "";
+    document.getElementById('drawerStatus').textContent = "Cleared. Back on demo data.";
+    refreshAll();
+  });
+
+  document.getElementById('saveUwKeyBtn').addEventListener('click', function(){
+    var key = document.getElementById('uwKeyInput').value.trim();
+    var statusEl = document.getElementById('uwDrawerStatus');
+    if (!key){ statusEl.textContent = "Enter a key first, or use Clear to stay on demo data."; return; }
+    statusEl.textContent = "Checking key…";
+    fetch("https://api.unusualwhales.com/api/option-trades/flow-alerts?limit=1", {
+      headers: { "Authorization": "Bearer " + key, "Accept": "application/json" }
+    }).then(function(r){
+      if (!r.ok) throw new Error("bad status " + r.status);
+      return r.json();
+    }).then(function(d){
+      if (!d || !Array.isArray(d.data)) throw new Error("no data");
+      state.uwApiKey = key;
+      state.uwLive = true;
+      saveUwApiKey(key);
+      statusEl.textContent = "Connected. Live options flow enabled.";
+      refreshOptionsFlow();
+      setTimeout(closeDrawer, 700);
+    }).catch(function(err){
+      var msg = "Couldn't connect — check the key or your plan. Staying on simulated flow.";
+      if (err && /bad status 401|bad status 403/.test(err.message)) {
+        msg = "Key was rejected (401/403) — check it's active and has API access on your plan.";
+      }
+      statusEl.textContent = msg;
+    });
+  });
+  document.getElementById('clearUwKeyBtn').addEventListener('click', function(){
+    state.uwApiKey = null;
+    state.uwLive = false;
+    clearUwApiKey();
+    document.getElementById('uwKeyInput').value = "";
+    document.getElementById('uwDrawerStatus').textContent = "Cleared. Back on simulated flow.";
+    refreshOptionsFlow();
+  });
+
+  function saveTapeSource(){
+    if (window.storage) window.storage.set('tape:source', state.tapeSource, false).catch(function(){});
+  }
+  Array.prototype.forEach.call(document.getElementsByName('tapeSource'), function(radio){
+    radio.addEventListener('change', function(){
+      if (!radio.checked) return;
+      state.tapeSource = radio.value;
+      saveTapeSource();
+      if (state.tapeSource === 'movers'){
+        document.getElementById('tapeSourceHint').textContent = state.live
+          ? "Ranking your tracked symbols live by % change via Finnhub."
+          : "Ranking your tracked symbols by simulated % change. Add a Finnhub key below to make this live.";
+      } else {
+        document.getElementById('tapeSourceHint').textContent = "Finnhub's free tier doesn't expose a market-wide \"trending\" discovery list — that's a premium screener feature. This ranks the symbols you already track (watchlist + indices) by how far they've moved, live once you add a key below.";
+      }
+      renderTape();
+    });
+  });
+
+  // ---------------- S&P 500 heatmap (TradingView widget, official & free) ----------------
+  var heatmapState = { grouping: 'sector', color: 'change' };
+  function buildHeatmapUrl(){
+    var opts = {
+      exchanges: [],
+      dataSource: "SPX500",
+      grouping: heatmapState.grouping,
+      blockSize: "market_cap_basic",
+      blockColor: heatmapState.color,
+      locale: "en",
+      symbolUrl: "",
+      colorTheme: "dark",
+      hasTopBar: true,
+      isDataSetEnabled: false,
+      isZoomEnabled: true,
+      hasSymbolTooltip: true,
+      width: "100%",
+      height: "100%"
+    };
+    return "https://www.tradingview-widget.com/embed-widget/stock-heatmap/?locale=en#" + encodeURIComponent(JSON.stringify(opts));
+  }
+  function renderHeatmap(){
+    var frame = document.getElementById('hmFrame');
+    if (frame) frame.src = buildHeatmapUrl();
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('#hmGroupSector, #hmGroupNone'), function(btn){
+    btn.addEventListener('click', function(){
+      document.getElementById('hmGroupSector').classList.toggle('active', btn.id === 'hmGroupSector');
+      document.getElementById('hmGroupNone').classList.toggle('active', btn.id === 'hmGroupNone');
+      heatmapState.grouping = btn.getAttribute('data-grouping');
+      renderHeatmap();
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#hmColorChange, #hmColorYtd'), function(btn){
+    btn.addEventListener('click', function(){
+      document.getElementById('hmColorChange').classList.toggle('active', btn.id === 'hmColorChange');
+      document.getElementById('hmColorYtd').classList.toggle('active', btn.id === 'hmColorYtd');
+      heatmapState.color = btn.getAttribute('data-color');
+      renderHeatmap();
+    });
+  });
+
+  // ---------------- boot ----------------
+  loadStorage().then(function(){
+    if (state.apiKey) state.live = true;
+    if (state.uwApiKey) state.uwLive = true;
+    var allSymbols = state.watchlist.concat(INDEX_PROXIES.map(function(i){return i.sym;}));
+    allSymbols.forEach(simulateTick); // seed so UI isn't empty
+    simulateSectors();
+    buildSampleNews();
+    simulateOptionsFlow();
+    if (state.tapeSource === 'movers'){
+      document.getElementById('tapeSourceMovers').checked = true;
+    }
+    render();
+    renderHeatmap();
+    refreshAll();
+    refreshOptionsFlow();
+    refreshTrending();
+    scheduleNext();
+    scheduleFlowNext();
+    scheduleTrendingNext();
+  });
+
+  function scheduleNext(){
+    var delay = state.live ? 15000 : 3000; // respect free-tier API rate limits when live
+    setTimeout(function(){
+      refreshAll();
+      scheduleNext();
+    }, delay);
+  }
+
+  function scheduleTrendingNext(){
+    // the trending leaderboard itself doesn't need second-by-second refreshing;
+    // its prices still update every cycle via refreshAll/scheduleNext above
+    setTimeout(function(){
+      refreshTrending();
+      scheduleTrendingNext();
+    }, 5 * 60 * 1000);
+  }
+
+  function scheduleFlowNext(){
+    var delay = state.uwLive ? 20000 : 5000; // conservative cadence for a paid, rate-limited API
+    setTimeout(function(){
+      refreshOptionsFlow();
+      scheduleFlowNext();
+    }, delay);
+  }
+
+})();
+</script>
+</body>
+</html>
