@@ -534,7 +534,7 @@
     <section class="panel panel-grow">
       <div class="panel-head">
         <h2>Sector snapshot</h2>
-        <span class="sub">Illustrative, not live</span>
+        <span class="sub" id="sectorsSub">Illustrative, not live</span>
       </div>
       <div class="panel-body">
         <div id="sectorList"></div>
@@ -599,7 +599,7 @@
 
     <p class="hint" style="border-top:1px solid var(--hairline); padding-top:14px;">TAPE runs on simulated data by default so it always works. Paste a free API key from
       <a class="keylink" href="https://finnhub.io/register" target="_blank" rel="noopener">finnhub.io</a>
-      to pull real quotes and headlines instead. The key is stored only for you, in this artifact's storage — never shared.</p>
+      to pull real quotes and headlines instead. The key is saved only in this browser (localStorage) — never sent anywhere except Finnhub.</p>
     <label for="apiKeyInput">Finnhub API key</label>
     <input type="text" id="apiKeyInput" placeholder="paste key here">
     <button class="primary" id="saveKeyBtn">Save &amp; go live</button>
@@ -630,6 +630,11 @@
     {sym:"IWM", label:"Russell 2000"}
   ];
   var SECTORS = ["Technology","Financials","Health Care","Energy","Industrials","Consumer Disc.","Utilities","Real Estate"];
+  // SPDR sector ETFs, used as live proxies for the sector snapshot
+  var SECTOR_ETFS = {
+    "Technology":"XLK", "Financials":"XLF", "Health Care":"XLV", "Energy":"XLE",
+    "Industrials":"XLI", "Consumer Disc.":"XLY", "Utilities":"XLU", "Real Estate":"XLRE"
+  };
 
   var SAMPLE_HEADLINES = [
     "Regional banks report steadier deposit trends heading into earnings season",
@@ -656,32 +661,50 @@
     uwLive: false,
     optionsFlow: [],   // {ticker, type, strike, expiry, premium, size, sweep, createdAt}
     trendingSymbols: [],     // StockTwits trending list, when reachable
-    trendingStatus: 'idle'   // 'idle' | 'ok' | 'blocked'
+    trendingStatus: 'idle',  // 'idle' | 'ok' | 'blocked'
+    lastUpdate: null,        // Date of last successful live quote
+    liveError: null          // short message when live fetches are failing
   };
 
   // ---------------- storage helpers (personal, non-shared) ----------------
+  // Uses the browser's localStorage, so keys and watchlist survive reloads on
+  // GitHub Pages. Wrapped in promises to keep the call sites unchanged.
+  var store = {
+    get: function(k){
+      try { return Promise.resolve({ value: localStorage.getItem(k) }); }
+      catch(e){ return Promise.resolve(null); }
+    },
+    set: function(k, v){
+      try { localStorage.setItem(k, v); } catch(e){}
+      return Promise.resolve();
+    },
+    delete: function(k){
+      try { localStorage.removeItem(k); } catch(e){}
+      return Promise.resolve();
+    }
+  };
   function loadStorage(){
     var tasks = [];
-    if (window.storage) {
+    if (store) {
       tasks.push(
-        window.storage.get('tape:watchlist').then(function(r){
+        store.get('tape:watchlist').then(function(r){
           if (r && r.value) {
             try { var arr = JSON.parse(r.value); if (Array.isArray(arr) && arr.length) state.watchlist = arr; } catch(e){}
           }
         }).catch(function(){})
       );
       tasks.push(
-        window.storage.get('tape:apikey').then(function(r){
+        store.get('tape:apikey').then(function(r){
           if (r && r.value) { state.apiKey = r.value; }
         }).catch(function(){})
       );
       tasks.push(
-        window.storage.get('tape:source').then(function(r){
+        store.get('tape:source').then(function(r){
           if (r && (r.value === 'movers' || r.value === 'watchlist')) { state.tapeSource = r.value; }
         }).catch(function(){})
       );
       tasks.push(
-        window.storage.get('tape:uwkey').then(function(r){
+        store.get('tape:uwkey').then(function(r){
           if (r && r.value) { state.uwApiKey = r.value; }
         }).catch(function(){})
       );
@@ -689,28 +712,28 @@
     return Promise.all(tasks);
   }
   function saveWatchlist(){
-    if (window.storage) {
-      window.storage.set('tape:watchlist', JSON.stringify(state.watchlist), false).catch(function(){});
+    if (store) {
+      store.set('tape:watchlist', JSON.stringify(state.watchlist), false).catch(function(){});
     }
   }
   function saveApiKey(key){
-    if (window.storage) {
-      window.storage.set('tape:apikey', key, false).catch(function(){});
+    if (store) {
+      store.set('tape:apikey', key, false).catch(function(){});
     }
   }
   function clearApiKey(){
-    if (window.storage) {
-      window.storage.delete('tape:apikey', false).catch(function(){});
+    if (store) {
+      store.delete('tape:apikey', false).catch(function(){});
     }
   }
   function saveUwApiKey(key){
-    if (window.storage) {
-      window.storage.set('tape:uwkey', key, false).catch(function(){});
+    if (store) {
+      store.set('tape:uwkey', key, false).catch(function(){});
     }
   }
   function clearUwApiKey(){
-    if (window.storage) {
-      window.storage.delete('tape:uwkey', false).catch(function(){});
+    if (store) {
+      store.delete('tape:uwkey', false).catch(function(){});
     }
   }
 
@@ -748,23 +771,110 @@
 
   // ---------------- live fetch (Finnhub) ----------------
   function fetchQuoteLive(sym){
-    var url = "https://finnhub.io/api/v2/quote?symbol=" + encodeURIComponent(sym) + "&token=" + encodeURIComponent(state.apiKey);
+    var url = "https://finnhub.io/api/v1/quote?symbol=" + encodeURIComponent(sym) + "&token=" + encodeURIComponent(state.apiKey);
     return fetch(url).then(function(r){
+      if (r.status === 429) throw new Error("rate limited");
+      if (r.status === 401 || r.status === 403) throw new Error("key rejected");
       if (!r.ok) throw new Error("bad response");
       return r.json();
     }).then(function(d){
       if (typeof d.c !== "number" || d.c === 0) throw new Error("no data");
-      ensurePriceEntry(sym);
       var e = state.prices[sym];
+      // replace any simulated placeholder with real data on first live quote
+      if (!e || !e.real){
+        e = state.prices[sym] = { price: d.c, prevClose: d.pc || d.c, changePct: 0, history: [], real: true };
+      }
       e.price = d.c;
       e.prevClose = d.pc || e.prevClose;
       e.changePct = d.dp != null ? d.dp : ((e.price - e.prevClose)/e.prevClose*100);
       e.history.push(e.price);
       if (e.history.length > 30) e.history.shift();
+      state.lastUpdate = new Date();
+      state.liveError = null;
     });
   }
+
+  // Never mix simulated prices into live mode — on failure keep the last real
+  // quote and surface the problem in the status chip instead.
+  function liveQuoteFailed(err){
+    var msg = err && err.message;
+    if (msg === "rate limited") state.liveError = "Rate limited — slowing down";
+    else if (msg === "key rejected") state.liveError = "Finnhub key rejected";
+    else if (msg !== "no data") state.liveError = "Some quotes failed";
+  }
+
+  // Fetch quotes a few at a time so we stay under Finnhub's 30 req/sec burst cap
+  function fetchQuotesLive(symbols){
+    var queue = symbols.slice(), workers = [];
+    function next(){
+      var sym = queue.shift();
+      if (!sym) return Promise.resolve();
+      return fetchQuoteLive(sym).catch(liveQuoteFailed).then(next);
+    }
+    for (var i = 0; i < 4; i++) workers.push(next());
+    return Promise.all(workers);
+  }
+
+  function sectorSymbols(){
+    return SECTORS.map(function(s){ return SECTOR_ETFS[s]; });
+  }
+  function updateSectorsFromQuotes(){
+    SECTORS.forEach(function(s){
+      var e = state.prices[SECTOR_ETFS[s]];
+      if (e && e.real) state.sectors[s] = e.changePct;
+    });
+  }
+
+  // ---------------- real-time trades (Finnhub websocket, free tier) ----------------
+  // Streams last-trade prices between REST polls so the tape moves in real time
+  // during market hours. Free tier allows up to 50 subscribed symbols.
+  var ws = null, wsSubs = {}, wsRenderPending = false;
+  function liveSymbols(){
+    var all = INDEX_PROXIES.map(function(i){return i.sym;})
+      .concat(state.watchlist).concat(state.trendingSymbols).concat(sectorSymbols());
+    return all.filter(function(s, i){ return all.indexOf(s) === i; });
+  }
+  function connectStream(){
+    if (ws || !state.live || !state.apiKey || !window.WebSocket) return;
+    ws = new WebSocket("wss://ws.finnhub.io?token=" + encodeURIComponent(state.apiKey));
+    wsSubs = {};
+    ws.onopen = syncStreamSubs;
+    ws.onmessage = function(ev){
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch(e){ return; }
+      if (msg.type !== "trade" || !Array.isArray(msg.data)) return;
+      msg.data.forEach(function(t){
+        var e = state.prices[t.s];
+        if (!e || !e.real || typeof t.p !== "number") return;
+        e.price = t.p;
+        e.changePct = ((e.price - e.prevClose) / e.prevClose) * 100;
+      });
+      state.lastUpdate = new Date();
+      if (!wsRenderPending){
+        wsRenderPending = true;
+        setTimeout(function(){ wsRenderPending = false; updateSectorsFromQuotes(); render(); }, 1000);
+      }
+    };
+    ws.onclose = function(){
+      ws = null;
+      if (state.live) setTimeout(connectStream, 10000);
+    };
+  }
+  function syncStreamSubs(){
+    if (!ws || ws.readyState !== 1) return;
+    var want = liveSymbols().slice(0, 50);
+    Object.keys(wsSubs).forEach(function(s){
+      if (want.indexOf(s) === -1){ ws.send(JSON.stringify({type:"unsubscribe", symbol:s})); delete wsSubs[s]; }
+    });
+    want.forEach(function(s){
+      if (!wsSubs[s]){ ws.send(JSON.stringify({type:"subscribe", symbol:s})); wsSubs[s] = true; }
+    });
+  }
+  function disconnectStream(){
+    if (ws){ var w = ws; ws = null; w.onclose = null; w.close(); }
+  }
   function fetchNewsLive(){
-    var url = "https://finnhub.io/api/v2/news?category=general&token=" + encodeURIComponent(state.apiKey);
+    var url = "https://finnhub.io/api/v1/news?category=general&token=" + encodeURIComponent(state.apiKey);
     return fetch(url).then(function(r){
       if (!r.ok) throw new Error("bad response");
       return r.json();
@@ -819,9 +929,10 @@
     return fetchStockTwitsTrending().then(function(){
       var allSymbols = state.trendingSymbols.slice();
       if (state.live && state.apiKey){
-        return Promise.all(allSymbols.map(function(sym){
-          return fetchQuoteLive(sym).catch(function(){ simulateTick(sym); });
-        })).then(function(){ renderTape2(); });
+        syncStreamSubs();
+        // only fetch symbols we don't have yet; refreshAll keeps the rest current
+        var missing = allSymbols.filter(function(s){ return !(state.prices[s] && state.prices[s].real); });
+        return fetchQuotesLive(missing).then(function(){ renderTape2(); });
       } else {
         allSymbols.forEach(simulateTick);
         renderTape2();
@@ -830,25 +941,26 @@
     });
   }
 
+  var lastNewsFetch = 0;
   function refreshAll(){
-    var allSymbols = state.watchlist
-      .concat(INDEX_PROXIES.map(function(i){return i.sym;}))
-      .concat(state.trendingSymbols);
-    allSymbols = allSymbols.filter(function(s, i){ return allSymbols.indexOf(s) === i; }); // dedupe
+    var allSymbols = liveSymbols();
 
     if (state.live && state.apiKey){
-      var promises = allSymbols.map(function(sym){
-        return fetchQuoteLive(sym).catch(function(){ simulateTick(sym); });
-      });
-      promises.push(fetchNewsLive().catch(function(){ /* keep old/sample news */ }));
-      Promise.all(promises).then(render);
+      connectStream();
+      syncStreamSubs();
+      var jobs = [fetchQuotesLive(allSymbols)];
+      if (Date.now() - lastNewsFetch > 5 * 60 * 1000){
+        lastNewsFetch = Date.now();
+        jobs.push(fetchNewsLive().catch(function(){ /* keep old/sample news */ }));
+      }
+      return Promise.all(jobs).then(function(){ updateSectorsFromQuotes(); render(); });
     } else {
       allSymbols.forEach(simulateTick);
       if (!state.news.length) buildSampleNews();
       simulateSectors();
       render();
+      return Promise.resolve();
     }
-    if (state.live) simulateSectors(); // sectors always illustrative
   }
 
   function buildSampleNews(){
@@ -1049,6 +1161,7 @@
       '</div>';
     }).join("");
     document.getElementById('sectorList').innerHTML = html;
+    document.getElementById('sectorsSub').textContent = state.live ? "Live via Finnhub (SPDR sector ETFs)" : "Illustrative, not live";
   }
 
   function renderNews(){
@@ -1108,7 +1221,13 @@
   function renderStatus(){
     var chip = document.getElementById('statusChip');
     var text = document.getElementById('statusText');
-    if (state.live) { chip.classList.add('live'); text.textContent = 'Live · Finnhub'; }
+    if (state.live) {
+      chip.classList.add('live');
+      var t = 'Live · Finnhub';
+      if (state.lastUpdate) t += ' · ' + state.lastUpdate.toLocaleTimeString();
+      if (state.liveError) t += ' · ' + state.liveError;
+      text.textContent = t;
+    }
     else { chip.classList.remove('live'); text.textContent = 'Demo data'; }
   }
 
@@ -1133,7 +1252,7 @@
       state.watchlist.push(sym);
       saveWatchlist();
       if (state.live && state.apiKey){
-        fetchQuoteLive(sym).catch(function(){ simulateTick(sym); }).then(render);
+        fetchQuoteLive(sym).catch(liveQuoteFailed).then(function(){ syncStreamSubs(); render(); });
       } else {
         simulateTick(sym);
         render();
@@ -1162,13 +1281,14 @@
     var statusEl = document.getElementById('drawerStatus');
     if (!key){ statusEl.textContent = "Enter a key first, or use Clear to stay on demo data."; return; }
     statusEl.textContent = "Checking key…";
-    var testUrl = "https://finnhub.io/api/v2/quote?symbol=AAPL&token=" + encodeURIComponent(key);
+    var testUrl = "https://finnhub.io/api/v1/quote?symbol=AAPL&token=" + encodeURIComponent(key);
     fetch(testUrl).then(function(r){ return r.json(); }).then(function(d){
       if (typeof d.c === "number" && d.c > 0){
         state.apiKey = key;
         state.live = true;
         saveApiKey(key);
         statusEl.textContent = "Connected. Live quotes enabled.";
+        disconnectStream();
         refreshAll();
         setTimeout(closeDrawer, 700);
       } else {
@@ -1182,6 +1302,7 @@
     state.apiKey = null;
     state.live = false;
     clearApiKey();
+    disconnectStream();
     document.getElementById('apiKeyInput').value = "";
     document.getElementById('drawerStatus').textContent = "Cleared. Back on demo data.";
     refreshAll();
@@ -1223,7 +1344,7 @@
   });
 
   function saveTapeSource(){
-    if (window.storage) window.storage.set('tape:source', state.tapeSource, false).catch(function(){});
+    if (store) store.set('tape:source', state.tapeSource, false).catch(function(){});
   }
   Array.prototype.forEach.call(document.getElementsByName('tapeSource'), function(radio){
     radio.addEventListener('change', function(){
@@ -1288,8 +1409,10 @@
     if (state.apiKey) state.live = true;
     if (state.uwApiKey) state.uwLive = true;
     var allSymbols = state.watchlist.concat(INDEX_PROXIES.map(function(i){return i.sym;}));
-    allSymbols.forEach(simulateTick); // seed so UI isn't empty
-    simulateSectors();
+    if (!state.live){
+      allSymbols.forEach(simulateTick); // seed so UI isn't empty
+      simulateSectors();
+    }
     buildSampleNews();
     simulateOptionsFlow();
     if (state.tapeSource === 'movers'){
@@ -1306,12 +1429,22 @@
   });
 
   function scheduleNext(){
-    var delay = state.live ? 15000 : 3000; // respect free-tier API rate limits when live
+    // Finnhub free tier: 60 calls/min. One call per symbol per cycle, so space
+    // cycles ~1.2s per symbol (min 20s). The websocket fills in between polls.
+    var delay = 3000;
+    if (state.live){
+      delay = Math.max(20000, liveSymbols().length * 1200);
+      if (state.liveError === "Rate limited — slowing down") delay *= 2;
+    }
     setTimeout(function(){
-      refreshAll();
-      scheduleNext();
+      Promise.resolve(refreshAll()).then(scheduleNext, scheduleNext);
     }, delay);
   }
+
+  // browsers throttle timers in background tabs — catch up as soon as it's visible
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'visible' && state.live) refreshAll();
+  });
 
   function scheduleTrendingNext(){
     // the trending leaderboard itself doesn't need second-by-second refreshing;
